@@ -2,20 +2,34 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gamma
 from scipy.stats import norm
+import scipy.stats
 
 class ReturnDistribution(object):
-    def __init__(self, current_price=None, projected_price_distribution=None, labels=None, likelihoods=None):
-        assert (current_price is not None and projected_price_distribution is not None) ^ (labels is not None and likelihoods is not None)
+    def price_to_return(self, price):
+        return 100.0 * (price/self.current_price-1.0)
+    
+    def return_to_price(self, return_value):
+        return self.current_price * (return_value/100.0 + 1.0)
+
+    def initialize_from_projected_price_distribution(self, price_distribution):
+        self.labels = np.zeros(price_distribution.num_bins, dtype=np.float)
+        self.pdf_function = lambda x: price_distribution.pdf_function(self.return_to_price(x))
+        self.pdf_sampler = lambda n: self.price_to_return(price_distribution.pdf_sampler(n))
+        self.num_bins = price_distribution.num_bins
+        for i in range(0,self.labels.shape[0]):
+            self.labels[i] = self.price_to_return(price_distribution.labels[i])
+        self.likelihoods = self.pdf_function(self.labels)
+
+    def __init__(self, current_price=None, projected_price_distribution=None, labels=None, pdf_function=None, pdf_sampler=None):
+        assert (current_price is not None and projected_price_distribution is not None) ^ (labels is not None and pdf_function is not None)
         self.current_price = current_price
-        if current_price is not None:
-            self.labels = np.zeros(projected_price_distribution.num_bins, dtype=np.float)
-            self.likelihoods = np.copy(projected_price_distribution.likelihoods)
-            self.num_bins = projected_price_distribution.num_bins
-            for i in range(0,self.labels.shape[0]):
-                self.labels[i] = 100.0 * (projected_price_distribution.labels[i]/self.current_price - 1.0)
+        if projected_price_distribution is not None:
+            self.initialize_from_projected_price_distribution(projected_price_distribution)
         else:
             self.labels = labels
-            self.likelihoods = likelihoods
+            self.pdf_function = pdf_function
+            self.pdf_sampler = pdf_sampler
+            self.likelihoods = self.pdf_function(self.labels)
     
     def __str__(self):
         ans = ""
@@ -30,8 +44,10 @@ class ReturnDistribution(object):
         plt.show()
 
 class PriceDistribution(object):
-    def __init__(self, labels, likelihoods):
-        self.likelihoods = likelihoods
+    def __init__(self, labels, pdf_function, pdf_sampler):
+        self.pdf_function = pdf_function
+        self.pdf_sampler = pdf_sampler
+        self.likelihoods = self.pdf_function(labels)
         self.labels = labels
         self.num_bins = labels.shape[0] 
         
@@ -51,6 +67,7 @@ class Token(object):
     def __init__(self, name, current_price, weight, price_distribution=None, return_distribution=None):
         assert (price_distribution==None) ^ (return_distribution==None)
         self.name = name
+        self.weight = weight
         if price_distribution is not None:
             self.price_distribution = price_distribution
             self.return_distribution = ReturnDistribution(current_price, price_distribution)
@@ -62,15 +79,25 @@ class TokenSet(object):
     def __init__(self, token_list):
         self.token_list = token_list
         self.name_index_map = {}
-        for i, token in enumerate(self.token_list):
+        for i, token in enumerate(token_list):
             self.name_index_map[token.name] = token
 
     def token(self, name):
         return self.name_index_map[name]
 
-    def plot_joint_return_distribution(self):
-        assert False, "TODO"
- 
+    def plot_joint_return_distribution(self, num_samples=2**15, bins=64, xmax=400.0):
+        fix, (ax1, ax2) = plt.subplots(1, 2, sharex=True, tight_layout=True)
+        return_samples = np.zeros(num_samples, dtype=np.float)
+        for i, token in enumerate(self.token_list):
+            return_samples += token.weight * token.return_distribution.pdf_sampler(num_samples)
+        ax1.hist(return_samples, bins=bins, normed=True)
+        alpha, loc, beta = scipy.stats.gamma.fit(return_samples)
+        x_spc = np.linspace(-100.0, xmax, 256)
+        ax2.plot(x_spc, gamma.cdf(x_spc, a=alpha, loc=loc, scale=beta))
+        plt.grid()
+        plt.xlim(-100.0, xmax)
+        plt.show()
+
     def plot_return_distributions_overlayed(self, xmin, xmax, ymin, ymax):
         fix, ax = plt.subplots(1, 1, tight_layout=True)
         plt.yscale('log')
@@ -86,49 +113,70 @@ class TokenSet(object):
         for key in data_dict:
             token = self.token(key)
             index = data_dict[key]
-            ax[index[0]*num_cols + index[1]].plot(token.return_distribution.labels, token.return_distribution.likelihoods, label=token.name)
-            ax[index[0]*num_cols + index[1]].legend()
+            ax[index[0]][index[1]].plot(token.return_distribution.labels, token.return_distribution.likelihoods, label=token.name)
+            ax[index[0]][index[1]].legend()
+            plt.xlim(xmin, xmax)
         plt.show()
 
 #Use case example
 if __name__=="__main__":
 
-    btc_price = np.linspace(0.0, 450000.0, 128)
-    btc_likelihoods = gamma.pdf(btc_price, a=2.5, loc=0.0, scale=40000.0)
+    n_samples = 512
 
-    eth_price = np.linspace(0.0, 20000.0, 128)
-    eth_likelihoods = gamma.pdf(eth_price, a=2.5, loc=1000.0, scale=1500.0)
+    btc_price = np.linspace(0.0, 450000.0, n_samples)
+    btc_price_pdf = lambda x: np.array(gamma.pdf(x, a=2.0, loc=0.0, scale=50000.0))
+    btc_price_samp = lambda n: np.array(gamma.rvs(a=2.0, loc=0.0, scale=50000.0, size=n))
 
-    usdc_price = np.linspace(0.0, 24.0, 128)
-    usdc_likelihoods = norm.pdf(usdc_price, 9.0, 1.5)
+    eth_price = np.linspace(0.0, 20000.0, n_samples)
+    eth_price_pdf = lambda x: np.array(gamma.pdf(x, a=2.5, loc=1000.0, scale=1500.0))
+    eth_price_samp = lambda n: np.array(gamma.rvs(a=2.5, loc=1000.0, scale=1500.0, size=n))
+
+    algo_price = np.linspace(0.0, 50.0, n_samples)
+    algo_price_pdf = lambda x: np.array(gamma.pdf(x, a=0.6, loc=0.0, scale=9.0))
+    algo_price_samp = lambda n: np.array(gamma.rvs(a=0.6, loc=0.0, scale=9.0, size=n))
+
+    #plt.plot(algo_price, algo_price_pdf(algo_price))
+    #plt.show()
+    #exit()
+
+    usdc_price = np.linspace(0.0, 24.0, n_samples)
+    usdc_return_pdf = lambda x: np.array(norm.pdf(x, 9.0, 1.5))
+    usdc_return_samp = lambda n: np.array(norm.rvs(9.0, 1.5, size=n))
 
     token_set = TokenSet(
         token_list = [
             Token(
                 name                = "USDC",
                 current_price       = 1.0,
-                weight              = 0.6,
-                return_distribution = ReturnDistribution(labels=np.array(usdc_price), likelihoods=np.array(usdc_likelihoods)),
+                weight              = 0.40,
+                return_distribution = ReturnDistribution(labels=np.array(usdc_price), pdf_function=usdc_return_pdf, pdf_sampler=usdc_return_samp),
             ),
             Token(
                 name               = "BTC",
                 current_price      = 57000.0,
                 weight             = 0.10,
-                price_distribution = PriceDistribution(labels=np.array(btc_price), likelihoods = np.array(btc_likelihoods)),
+                price_distribution = PriceDistribution(labels=np.array(btc_price), pdf_function=btc_price_pdf, pdf_sampler=btc_price_samp),
             ),
             Token(
                 name               = "ETH",
                 current_price      = 2900.0,
-                weight             = 0.3,
-                price_distribution = PriceDistribution(labels=np.array(eth_price), likelihoods=np.array(eth_likelihoods)),
+                weight             = 0.40,
+                price_distribution = PriceDistribution(labels=np.array(eth_price), pdf_function=eth_price_pdf, pdf_sampler=eth_price_samp),
+            ),
+            Token(
+                name               = "ALGO",
+                current_price      = 1.39,
+                weight             = 0.10,
+                price_distribution = PriceDistribution(labels=np.array(algo_price), pdf_function=algo_price_pdf, pdf_sampler=algo_price_samp),
             )
         ]
     )
     token_dict = {}
     token_dict["USDC"] = [0,0]
     token_dict["BTC"]  = [0,1]
-    token_dict["ETH"]  = [0,2]
-    token_set.plot_return_distributions_tiled(token_dict, 1, 3, 0.0, 400.0)
+    token_dict["ETH"]  = [1,0]
+    token_dict["ALGO"]  = [1,1]
+    token_set.plot_return_distributions_tiled(token_dict, 2, 2, -100.0, 1000.0)
     token_set.plot_return_distributions_overlayed(xmin=-100.0, xmax=400.0, ymin=1.0e-8, ymax=None)
     token_set.plot_joint_return_distribution()   
  
