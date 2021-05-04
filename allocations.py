@@ -85,7 +85,7 @@ class TokenSet(object):
     def token(self, name):
         return self.name_index_map[name]
 
-    def plot_joint_return_distribution(self, num_samples=2**15, bins=64, xmax=400.0):
+    def plot_joint_return_distribution(self, num_samples=2**15, bins=128, xmax=1000.0):
         fix, (ax1, ax2) = plt.subplots(1, 2, sharex=True, tight_layout=True)
         return_samples = np.zeros(num_samples, dtype=np.float)
         for i, token in enumerate(self.token_list):
@@ -94,6 +94,7 @@ class TokenSet(object):
         alpha, loc, beta = scipy.stats.gamma.fit(return_samples)
         x_spc = np.linspace(-100.0, xmax, 256)
         ax2.plot(x_spc, gamma.cdf(x_spc, a=alpha, loc=loc, scale=beta))
+        ax2.set_ylim(0.0, 1.0)
         plt.grid()
         plt.xlim(-100.0, xmax)
         plt.show()
@@ -121,21 +122,38 @@ class TokenSet(object):
 #Use case example
 if __name__=="__main__":
 
-    n_samples = 512
+    n_samples = 2056
 
-    btc_price = np.linspace(0.0, 450000.0, n_samples)
-    btc_price_pdf = lambda x: np.array(gamma.pdf(x, a=2.0, loc=0.0, scale=50000.0))
-    btc_price_samp = lambda n: np.array(gamma.rvs(a=2.0, loc=0.0, scale=50000.0, size=n))
+    btc_price      = np.linspace(0.0, 450000.0, n_samples)
+    btc_price_pdf  = lambda x: np.array(gamma.pdf(x, a=1.5, loc=0.0, scale=50000.0))
+    btc_price_samp = lambda n: np.array(gamma.rvs(a=1.5, loc=0.0, scale=50000.0, size=n))
+    btc_price_cdf  = lambda x: np.array(gamma.cdf(x, a=1.5, loc=0.0, scale=50000.0))
 
     eth_price = np.linspace(0.0, 20000.0, n_samples)
-    eth_price_pdf = lambda x: np.array(gamma.pdf(x, a=2.5, loc=1000.0, scale=1500.0))
-    eth_price_samp = lambda n: np.array(gamma.rvs(a=2.5, loc=1000.0, scale=1500.0, size=n))
+    eth_price_pdf  = lambda x: np.array(gamma.pdf(x, a=2.0, loc=1000.0, scale=1600.0))
+    eth_price_samp = lambda n: np.array(gamma.rvs(a=2.0, loc=1000.0, scale=1600.0, size=n))
+    eth_price_cdf  = lambda x: np.array(gamma.cdf(x, a=2.0, loc=1000.0, scale=1600.0)) 
 
     algo_price = np.linspace(0.0, 50.0, n_samples)
-    algo_price_pdf = lambda x: np.array(gamma.pdf(x, a=0.6, loc=0.0, scale=9.0))
-    algo_price_samp = lambda n: np.array(gamma.rvs(a=0.6, loc=0.0, scale=9.0, size=n))
+    algo_price_pdf  = lambda x: np.array(gamma.pdf(x, a=0.4, loc=0.0, scale=12.0))
+    algo_price_samp = lambda n: np.array(gamma.rvs(a=0.4, loc=0.0, scale=12.0, size=n))
+    algo_price_cdf  = lambda x: np.array(gamma.cdf(x, a=0.4, loc=0.0, scale=12.0)) 
 
-    #plt.plot(algo_price, algo_price_pdf(algo_price))
+    ada_price = np.linspace(0.0, 10.0, n_samples)
+    ada_price_pdf  = lambda x: np.array(gamma.pdf(x, a=1.5, loc=0.0, scale=1.5))
+    ada_price_samp = lambda n: np.array(gamma.rvs(a=1.5, loc=0.0, scale=1.5, size=n))
+    ada_price_cdf  = lambda x: np.array(gamma.cdf(x, a=1.5, loc=0.0, scale=1.5)) 
+
+    sol_price = np.linspace(0.0, 4000.0, n_samples)
+    sol_price_pdf  = lambda x: np.array(gamma.pdf(x, a=0.22, loc=0.0, scale=1500.0))
+    sol_price_samp = lambda n: np.array(gamma.rvs(a=0.22, loc=0.0, scale=1500.0, size=n))
+    sol_price_cdf  = lambda x: np.array(gamma.cdf(x, a=0.22, loc=0.0, scale=1500.0)) 
+
+    #fig, (ax1, ax2) = plt.subplots(1,2,sharex=True,tight_layout=True)
+    #ax1.plot(sol_price, sol_price_pdf(sol_price))
+    #ax1.grid()
+    #ax2.plot(sol_price, sol_price_cdf(sol_price))
+    #ax2.grid()
     #plt.show()
     #exit()
 
@@ -148,26 +166,38 @@ if __name__=="__main__":
             Token(
                 name                = "USDC",
                 current_price       = 1.0,
-                weight              = 0.40,
+                weight              = 0.20,
                 return_distribution = ReturnDistribution(labels=np.array(usdc_price), pdf_function=usdc_return_pdf, pdf_sampler=usdc_return_samp),
             ),
             Token(
                 name               = "BTC",
                 current_price      = 57000.0,
-                weight             = 0.10,
+                weight             = 0.05,
                 price_distribution = PriceDistribution(labels=np.array(btc_price), pdf_function=btc_price_pdf, pdf_sampler=btc_price_samp),
             ),
             Token(
                 name               = "ETH",
                 current_price      = 2900.0,
-                weight             = 0.40,
+                weight             = 0.45,
                 price_distribution = PriceDistribution(labels=np.array(eth_price), pdf_function=eth_price_pdf, pdf_sampler=eth_price_samp),
             ),
             Token(
                 name               = "ALGO",
                 current_price      = 1.39,
-                weight             = 0.10,
+                weight             = 0.03,
                 price_distribution = PriceDistribution(labels=np.array(algo_price), pdf_function=algo_price_pdf, pdf_sampler=algo_price_samp),
+            ),
+            Token(
+                name               = "ADA",
+                current_price      = 1.35,
+                weight             = 0.07,
+                price_distribution = PriceDistribution(labels=np.array(ada_price), pdf_function=ada_price_pdf, pdf_sampler=ada_price_samp),
+            ),
+            Token(
+                name               = "SOL",
+                current_price      = 45.0,
+                weight             = 0.20,
+                price_distribution = PriceDistribution(labels=np.array(sol_price), pdf_function=sol_price_pdf, pdf_sampler=sol_price_samp),
             )
         ]
     )
@@ -176,8 +206,10 @@ if __name__=="__main__":
     token_dict["BTC"]  = [0,1]
     token_dict["ETH"]  = [1,0]
     token_dict["ALGO"]  = [1,1]
-    token_set.plot_return_distributions_tiled(token_dict, 2, 2, -100.0, 1000.0)
-    token_set.plot_return_distributions_overlayed(xmin=-100.0, xmax=400.0, ymin=1.0e-8, ymax=None)
+    token_dict["ADA"]  = [2,0]
+    token_dict["SOL"]  = [2,1]
+    #token_set.plot_return_distributions_tiled(token_dict, 3, 2, -100.0, 1000.0)
+    #token_set.plot_return_distributions_overlayed(xmin=-100.0, xmax=500.0, ymin=1.0e-8, ymax=None)
     token_set.plot_joint_return_distribution()   
  
 
